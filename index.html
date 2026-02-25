@@ -2130,6 +2130,12 @@
                             <button class="btn btn-sm btn-warning me-1" onclick="showEditBill('${bill.id}')" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
+                            <button class="btn btn-sm btn-success me-1" onclick="downloadBillPDFById('${bill.id}')" title="Download PDF">
+                                <i class="fas fa-file-pdf"></i>
+                            </button>
+                            <button class="btn btn-sm btn-success me-1" onclick="sendBillToCustomerById('${bill.id}')" title="WhatsApp">
+                                <i class="fab fa-whatsapp"></i>
+                            </button>
                             ${!isRecent ? `<button class="btn btn-sm btn-danger" onclick="deleteBill('${bill.id}')" title="Delete">
                                 <i class="fas fa-trash"></i>
                             </button>` : ''}
@@ -2198,6 +2204,11 @@
                     row.querySelector('.service-name').value = service.name;
                     row.querySelector('.service-price').value = service.price || service.amount;
                     row.querySelector('.service-qty').value = service.qty || 1;
+                    // Set status
+                    const statusSelect = row.querySelector('.service-status');
+                    if (statusSelect) {
+                        statusSelect.value = service.status || 'Pending';
+                    }
                     
                     // Handle other item custom name
                     if (service.customName && (service.name === "Other item" || service.name === "Other (Custom Service)")) {
@@ -2221,8 +2232,8 @@
             row.className = 'service-item';
             row.id = `serviceRow${rowId}`;
             row.innerHTML = `
-                <div class="row">
-                    <div class="col-md-5">
+                <div class="row align-items-center">
+                    <div class="col-md-4">
                         <select class="form-select service-name" onchange="updateServiceRow(this, '${rowId}')">
                             <option value="">Select Service</option>
                             ${services.map(s => `<option value="${s.name}" data-price="${s.price}">${s.name} (₹${s.price})</option>`).join('')}
@@ -2233,8 +2244,14 @@
                     <div class="col-md-2">
                         <input type="number" class="form-control service-price" placeholder="Price" min="0" value="0" onchange="calculateTotal()">
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-1">
                         <input type="number" class="form-control service-qty" placeholder="Qty" min="1" value="1" onchange="calculateTotal()">
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select service-status">
+                            <option value="Pending" selected>Pending</option>
+                            <option value="Done">Done</option>
+                        </select>
                     </div>
                     <div class="col-md-2">
                         <input type="number" class="form-control" placeholder="Total" readonly value="0" id="serviceTotal${rowId}">
@@ -2329,6 +2346,7 @@
                 const name = row.querySelector('.service-name').value;
                 const price = parseFloat(row.querySelector('.service-price').value) || 0;
                 const qty = parseFloat(row.querySelector('.service-qty').value) || 1;
+                const status = row.querySelector('.service-status').value;
                 const amount = price * qty;
                 
                 let customName = '';
@@ -2348,7 +2366,8 @@
                         price,
                         qty,
                         amount,
-                        customName
+                        customName,
+                        status
                     });
                 }
             });
@@ -2508,6 +2527,7 @@
                         <td>${service.qty || 1}</td>
                         <td>₹${(service.price || service.amount).toFixed(2)}</td>
                         <td>₹${serviceAmount.toFixed(2)}</td>
+                        <td><span class="badge ${service.status === 'Done' ? 'bg-success' : 'bg-warning'}">${service.status || 'Pending'}</span></td>
                     </tr>
                 `;
             });
@@ -2546,35 +2566,36 @@
                                     <th>Qty</th>
                                     <th>Price</th>
                                     <th>Amount</th>
+                                    <th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>${servicesHTML}</tbody>
                             <tfoot>
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Subtotal</strong></td>
+                                    <td colspan="5" class="text-end"><strong>Subtotal</strong></td>
                                     <td><strong>₹${bill.subtotal.toFixed(2)}</strong></td>
                                 </tr>
                                 ${bill.discount > 0 ? `
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Discount</strong></td>
+                                    <td colspan="5" class="text-end"><strong>Discount</strong></td>
                                     <td>- ₹${bill.discount.toFixed(2)}</td>
                                 </tr>` : ''}
                                 ${bill.tax > 0 ? `
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Tax (${bill.tax}%)</strong></td>
+                                    <td colspan="5" class="text-end"><strong>Tax (${bill.tax}%)</strong></td>
                                     <td>₹${(bill.taxAmount || 0).toFixed(2)}</td>
                                 </tr>` : ''}
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Total Amount</strong></td>
+                                    <td colspan="5" class="text-end"><strong>Total Amount</strong></td>
                                     <td><strong>₹${bill.total.toFixed(2)}</strong></td>
                                 </tr>
                                 ${bill.advance > 0 ? `
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Advance Paid</strong></td>
+                                    <td colspan="5" class="text-end"><strong>Advance Paid</strong></td>
                                     <td>- ₹${bill.advance.toFixed(2)}</td>
                                 </tr>
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Balance Due</strong></td>
+                                    <td colspan="5" class="text-end"><strong>Balance Due</strong></td>
                                     <td><strong>₹${bill.balance.toFixed(2)}</strong></td>
                                 </tr>` : ''}
                             </tfoot>
@@ -2634,9 +2655,9 @@
             modal.show();
         }
         
-        function generateBillHTML(billData) {
+        function generateBillHTML(bill) {
             let servicesHTML = '';
-            billData.services.forEach((service, index) => {
+            bill.services.forEach((service, index) => {
                 const serviceName = service.customName || service.name;
                 servicesHTML += `
                     <tr>
@@ -2645,20 +2666,21 @@
                         <td class="text-center">${service.qty || 1}</td>
                         <td class="text-end">₹${(service.price || service.amount).toFixed(2)}</td>
                         <td class="text-end">₹${((service.qty || 1) * (service.price || service.amount)).toFixed(2)}</td>
+                        <td class="text-center"><span class="badge ${service.status === 'Done' ? 'bg-success' : 'bg-warning'}">${service.status || 'Pending'}</span></td>
                     </tr>
                 `;
             });
             
             // Get signature (either from form or preview)
             let signatureHTML = '';
-            if (billData.signature) {
+            if (bill.signature) {
                 signatureHTML = `
                     <div class="signature-section">
                         <div style="float: right; text-align: center;">
-                            <img src="${billData.signature.dataUrl}" style="max-width: 200px; height: 80px; object-fit: contain;">
+                            <img src="${bill.signature.dataUrl}" style="max-width: 200px; height: 80px; object-fit: contain;">
                             <div style="border-top: 1px solid #000; margin-top: 5px; padding-top: 5px;">
-                                <strong>${billData.signature.name}</strong><br>
-                                <small>${billData.signature.designation}</small>
+                                <strong>${bill.signature.name}</strong><br>
+                                <small>${bill.signature.designation}</small>
                             </div>
                         </div>
                         <div style="clear: both;"></div>
@@ -2684,15 +2706,15 @@
                     <div class="row mb-4">
                         <div class="col-md-6">
                             <h5>Bill To:</h5>
-                            <p><strong>${billData.customerName}</strong><br>
-                            Phone: ${billData.customerPhone}<br>
-                            ${billData.customerAddress || ''}</p>
+                            <p><strong>${bill.customerName}</strong><br>
+                            Phone: ${bill.customerPhone}<br>
+                            ${bill.customerAddress || ''}</p>
                         </div>
                         <div class="col-md-6 text-end">
                             <h5>Invoice Details</h5>
-                            <p><strong>Invoice No:</strong> ${billData.invoiceNumber}<br>
-                            <strong>Date:</strong> ${billData.date}<br>
-                            <strong>Payment:</strong> ${billData.paymentMethod}</p>
+                            <p><strong>Invoice No:</strong> ${bill.invoiceNumber}<br>
+                            <strong>Date:</strong> ${bill.date}<br>
+                            <strong>Payment:</strong> ${bill.paymentMethod}</p>
                         </div>
                     </div>
                     
@@ -2705,45 +2727,46 @@
                                     <th width="10%" class="text-center">Qty</th>
                                     <th width="15%" class="text-end">Price</th>
                                     <th width="15%" class="text-end">Amount</th>
+                                    <th width="10%" class="text-center">Status</th>
                                 </tr>
                             </thead>
                             <tbody>${servicesHTML}</tbody>
                             <tfoot>
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Subtotal</strong></td>
-                                    <td class="text-end">₹${billData.subtotal.toFixed(2)}</td>
+                                    <td colspan="5" class="text-end"><strong>Subtotal</strong></td>
+                                    <td class="text-end">₹${bill.subtotal.toFixed(2)}</td>
                                 </tr>
-                                ${billData.discount > 0 ? `
+                                ${bill.discount > 0 ? `
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Discount</strong></td>
-                                    <td class="text-end">- ₹${billData.discount.toFixed(2)}</td>
+                                    <td colspan="5" class="text-end"><strong>Discount</strong></td>
+                                    <td class="text-end">- ₹${bill.discount.toFixed(2)}</td>
                                 </tr>` : ''}
-                                ${billData.tax > 0 ? `
+                                ${bill.tax > 0 ? `
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Tax (${billData.tax}%)</strong></td>
-                                    <td class="text-end">₹${billData.taxAmount.toFixed(2)}</td>
+                                    <td colspan="5" class="text-end"><strong>Tax (${bill.tax}%)</strong></td>
+                                    <td class="text-end">₹${bill.taxAmount.toFixed(2)}</td>
                                 </tr>` : ''}
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Total Amount</strong></td>
-                                    <td class="text-end"><strong>₹${billData.total.toFixed(2)}</strong></td>
+                                    <td colspan="5" class="text-end"><strong>Total Amount</strong></td>
+                                    <td class="text-end"><strong>₹${bill.total.toFixed(2)}</strong></td>
                                 </tr>
-                                ${billData.advance > 0 ? `
+                                ${bill.advance > 0 ? `
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Advance Paid</strong></td>
-                                    <td class="text-end">- ₹${billData.advance.toFixed(2)}</td>
+                                    <td colspan="5" class="text-end"><strong>Advance Paid</strong></td>
+                                    <td class="text-end">- ₹${bill.advance.toFixed(2)}</td>
                                 </tr>
                                 <tr>
-                                    <td colspan="4" class="text-end"><strong>Balance Due</strong></td>
-                                    <td class="text-end"><strong>₹${billData.balance.toFixed(2)}</strong></td>
+                                    <td colspan="5" class="text-end"><strong>Balance Due</strong></td>
+                                    <td class="text-end"><strong>₹${bill.balance.toFixed(2)}</strong></td>
                                 </tr>` : ''}
                             </tfoot>
                         </table>
                     </div>
                     
-                    ${billData.notes ? `
+                    ${bill.notes ? `
                     <div class="alert alert-light mb-4">
                         <h6>Notes:</h6>
-                        <p class="mb-0">${billData.notes}</p>
+                        <p class="mb-0">${bill.notes}</p>
                     </div>
                     ` : ''}
                     
@@ -2787,6 +2810,32 @@
             doc.save(`${currentBill.invoiceNumber}.pdf`);
         }
         
+        async function downloadBillPDFById(billId) {
+            const bill = bills.find(b => b.id === billId);
+            if (!bill) return;
+            
+            const { jsPDF } = window.jspdf;
+            
+            // Create a temporary container to render the bill
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = generateBillHTML(bill);
+            tempDiv.style.position = 'absolute';
+            tempDiv.style.left = '-9999px';
+            document.body.appendChild(tempDiv);
+            
+            const canvas = await html2canvas(tempDiv, { scale: 2 });
+            const imgData = canvas.toDataURL('image/png');
+            
+            const doc = new jsPDF('p', 'mm', 'a4');
+            const imgWidth = 190;
+            const imgHeight = canvas.height * imgWidth / canvas.width;
+            
+            doc.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+            doc.save(`${bill.invoiceNumber}.pdf`);
+            
+            document.body.removeChild(tempDiv);
+        }
+        
         function sendBillToCustomer() {
             if (!currentBill || !currentBill.customerPhone) {
                 alert('No customer phone available');
@@ -2795,6 +2844,19 @@
             
             const message = `Dear ${currentBill.customerName}, your invoice ${currentBill.invoiceNumber} for ₹${currentBill.total} is ready. Thank you for choosing CoolCare AC Services!`;
             const whatsappLink = `https://wa.me/91${currentBill.customerPhone}?text=${encodeURIComponent(message)}`;
+            
+            window.open(whatsappLink, '_blank');
+        }
+        
+        function sendBillToCustomerById(billId) {
+            const bill = bills.find(b => b.id === billId);
+            if (!bill || !bill.customerPhone) {
+                alert('No customer phone available');
+                return;
+            }
+            
+            const message = `Dear ${bill.customerName}, your invoice ${bill.invoiceNumber} for ₹${bill.total} is ready. Thank you for choosing CoolCare AC Services!`;
+            const whatsappLink = `https://wa.me/91${bill.customerPhone}?text=${encodeURIComponent(message)}`;
             
             window.open(whatsappLink, '_blank');
         }
